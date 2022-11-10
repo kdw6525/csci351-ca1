@@ -16,6 +16,7 @@ MAC_CONVERSATIONS = 0
 IP_CONVERSATIONS = 0
 PORT_CONVERSATIONS = 0
 
+
 def parse_IPv4():
     """
     parse a IPv4 packet
@@ -41,7 +42,7 @@ def parse_ARP(packet_hex, src_mac, dst_mac):
 
     # if it's a request insert it into the ARP request dictionary
     if opcode == 1:
-        ARP_REQUESTS[src_ip+dst_ip] = details
+        ARP_REQUESTS[src_ip + dst_ip] = details
     # if it's a reply check for a request
     elif opcode == 2 and ARP_REQUESTS[dst_ip + src_ip] is not None:
         ARP_REQUESTS.pop(dst_ip + src_ip)
