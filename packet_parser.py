@@ -11,7 +11,7 @@ import sys
 
 IPv4 = '0800'
 RECENT_PROTOCOLS = {}
-ARP_REQUESTS = {}
+CONVERSATIONS = {}
 MAC_CONVERSATIONS = 0
 IP_CONVERSATIONS = 0
 PORT_CONVERSATIONS = 0
@@ -29,7 +29,6 @@ def parse_ARP(packet_hex, src_mac, dst_mac):
     """
     parse an ARP packet
     """
-    global MAC_CONVERSATIONS
     hardware_type = int(packet_hex[0] + packet_hex[1], base=16)
     protocol_type = packet_hex[2] + packet_hex[3]
     hardware_size = int(packet_hex[4], base=16)
@@ -40,28 +39,61 @@ def parse_ARP(packet_hex, src_mac, dst_mac):
 
     details = [hardware_type, protocol_type, hardware_size, protocol_size, opcode, src_mac, src_ip, dst_mac, dst_ip]
 
-    # if it's a request insert it into the ARP request dictionary
-    if opcode == 1:
-        ARP_REQUESTS[src_ip + dst_ip] = details
-    # if it's a reply check for a request
-    elif opcode == 2 and ARP_REQUESTS[dst_ip + src_ip] is not None:
-        ARP_REQUESTS.pop(dst_ip + src_ip)
-        MAC_CONVERSATIONS += 1
+    # Check conversations!
+    check_communications((src_mac, dst_mac, 'ARP'))
 
     return details, 'ARP'
 
 
-def parse_STP(packet_hex, length, src_mac, dst_mac):
+def parse_STP(packet_hex, length, control, src_mac, dst_mac):
     """
     parse an STP packet
     """
-    return [], 'STP'
+
+    # parse packet
+    protocol = packet_hex[0] + packet_hex[1]
+    protocol_version = int(packet_hex[2], base=16)
+    bpdu_type = packet_hex[3]
+    flags = packet_hex[4]
+
+    # Root identifier
+    root_bridge = int(packet_hex[5] + packet_hex[6], base=16)
+    # first 4 bits is root priority, last 12 bits are id extension
+    root_identifier = (root_bridge & 0xF000, root_bridge & 0x0FFF, parse_mac(packet_hex[7:13]))
+
+    path_cost = int(packet_hex[13] + packet_hex[14] + packet_hex[15] + packet_hex[16], base=16)
+
+    # Bridge identifier
+    bridge = int(packet_hex[17] + packet_hex[18], base=16)
+    # first 4 bits is bridge priority, last 12 bits are id extension
+    bridge_identifier = (bridge & 0xF000, bridge & 0x0FFF, parse_mac(packet_hex[19:25]))
+
+    port_identifier = packet_hex[25] + packet_hex[26]
+    msg_age = int(packet_hex[27] + packet_hex[28], base=16) / 256
+    max_age = int(packet_hex[29] + packet_hex[30], base=16) / 256
+    hello_time = int(packet_hex[31] + packet_hex[32], base=16) / 256
+    fwrd_delay = int(packet_hex[33] + packet_hex[34], base=16) / 256
+
+    # package up the details
+    details = [protocol, protocol_version, bpdu_type, flags, root_identifier, path_cost,
+               bridge_identifier, port_identifier, msg_age, max_age, hello_time, fwrd_delay]
+
+    # Check conversations!
+    check_communications((src_mac, dst_mac, 'STP'))
+
+    return details, 'STP'
 
 
-def parse_CDP(packet_hex, length, src_mac, dst_mac):
+def parse_CDP(packet_hex, length, control, org_code, pid, src_mac, dst_mac):
     """
     parse a CDP packet
     """
+    # There is too many bytes in the frame. TODO: look at the first 64 bytes, 22 parsed so far
+    # We can check for communications though.
+
+    # Check conversations!
+    check_communications((src_mac, dst_mac, 'CDP'))
+
     return [], 'CDP'
 
 
@@ -71,11 +103,14 @@ def parse_802_3(packet_hex, length, src_mac, dst_mac):
     """
     DSAP = packet_hex[0]
     SSAP = packet_hex[1]
+    control = packet_hex[2]
 
     if DSAP == '42' and SSAP == '42':
-        return parse_STP(packet_hex, length, src_mac, dst_mac)
+        return parse_STP(packet_hex[3:], length, control, src_mac, dst_mac)
     elif DSAP == 'aa' and SSAP == 'aa':
-        return parse_CDP(packet_hex, length, src_mac, dst_mac)
+        org_code = packet_hex[3] + ':' + packet_hex[4] + ':' + packet_hex[5]
+        pid = packet_hex[6] + packet_hex[7]
+        return parse_CDP(packet_hex[8:], length, control, org_code, pid, src_mac, dst_mac)
 
     return
 
@@ -101,11 +136,8 @@ def parse_packet(packet_hex_string):
             return parse_IPv4()
         else:
             return parse_ARP(packet_hex[14:], src, dst)
-
     else:
         return parse_802_3(packet_hex[14:], length, src, dst)
-
-    return
 
 
 def parse_timestamp(timestamp):
@@ -135,6 +167,20 @@ def parse_mac(mac_hex_array):
     e = mac_hex_array[4]
     f = mac_hex_array[5]
     return a + ':' + b + ':' + c + ':' + d + ':' + e + ':' + f
+
+
+def check_communications(src_dst_protocol):
+    global MAC_CONVERSATIONS
+    # checks the CONVERSATIONS dictionary for a communication then updates
+    flipped = (src_dst_protocol[1], src_dst_protocol[0], src_dst_protocol[2])
+    if src_dst_protocol in CONVERSATIONS and CONVERSATIONS[src_dst_protocol] == 0:
+        MAC_CONVERSATIONS += 1
+        CONVERSATIONS[src_dst_protocol] = 1
+    elif flipped in CONVERSATIONS and CONVERSATIONS[flipped] == 0:
+        MAC_CONVERSATIONS += 1
+        CONVERSATIONS[flipped] = 1
+    elif src_dst_protocol not in CONVERSATIONS and flipped not in CONVERSATIONS:
+        CONVERSATIONS[src_dst_protocol] = 0
 
 
 def parse(file_name):
