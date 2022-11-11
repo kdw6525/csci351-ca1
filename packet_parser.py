@@ -48,13 +48,35 @@ def parse_ARP(packet_hex, src_mac, dst_mac):
         ARP_REQUESTS.pop(dst_ip + src_ip)
         MAC_CONVERSATIONS += 1
 
-    return details
+    return details, 'ARP'
 
 
-def parse_802_3(length, src_mac, dst_mac, packet_hex):
+def parse_STP(packet_hex, length, src_mac, dst_mac):
+    """
+    parse an STP packet
+    """
+    return [], 'STP'
+
+
+def parse_CDP(packet_hex, length, src_mac, dst_mac):
+    """
+    parse a CDP packet
+    """
+    return [], 'CDP'
+
+
+def parse_802_3(packet_hex, length, src_mac, dst_mac):
     """
     parse a 802.3 frame
     """
+    DSAP = packet_hex[0]
+    SSAP = packet_hex[1]
+
+    if DSAP == '42' and SSAP == '42':
+        return parse_STP(packet_hex, length, src_mac, dst_mac)
+    elif DSAP == 'aa' and SSAP == 'aa':
+        return parse_CDP(packet_hex, length, src_mac, dst_mac)
+
     return
 
 
@@ -78,10 +100,10 @@ def parse_packet(packet_hex_string):
         if packet_type == IPv4:
             return parse_IPv4()
         else:
-            return parse_ARP(packet_hex[14:], src, dst), 'ARP'
+            return parse_ARP(packet_hex[14:], src, dst)
 
     else:
-        return parse_802_3(length, src, dst, packet_hex)
+        return parse_802_3(packet_hex[14:], length, src, dst)
 
     return
 
@@ -147,6 +169,8 @@ def parse(file_name):
 def main(file_name):
     # open wireshark dataset
     parse(file_name)
+    for protocol in RECENT_PROTOCOLS.keys():
+        print(protocol + ' ' + str(RECENT_PROTOCOLS[protocol]))
     print(MAC_CONVERSATIONS)
     return
 
