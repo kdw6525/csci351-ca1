@@ -25,7 +25,7 @@ def parse_IPv4():
     return
 
 
-def parse_ARP(packet_hex, src_mac, dst_mac):
+def parse_ARP(packet_hex, packet_type, src_mac, dst_mac):
     """
     parse an ARP packet
     """
@@ -37,7 +37,9 @@ def parse_ARP(packet_hex, src_mac, dst_mac):
     src_ip = parse_ip(packet_hex[14:18])
     dst_ip = parse_ip(packet_hex[24:28])
 
-    details = [hardware_type, protocol_type, hardware_size, protocol_size, opcode, src_mac, src_ip, dst_mac, dst_ip]
+    details = [src_mac, dst_mac, packet_type,                           # eth 2 data
+               hardware_type, protocol_type, hardware_size,             # arp data
+               protocol_size, opcode, src_mac, src_ip, dst_mac, dst_ip]
 
     # Check conversations!
     check_communications((src_mac, dst_mac, 'ARP'))
@@ -75,7 +77,8 @@ def parse_STP(packet_hex, length, control, src_mac, dst_mac):
     fwrd_delay = int(packet_hex[33] + packet_hex[34], base=16) / 256
 
     # package up the details
-    details = [protocol, protocol_version, bpdu_type, flags, root_identifier, path_cost,
+    details = [src_mac, dst_mac, length, control,                                           # 802.3 data
+               protocol, protocol_version, bpdu_type, flags, root_identifier, path_cost,    # STP   data
                bridge_identifier, port_identifier, msg_age, max_age, hello_time, fwrd_delay]
 
     # Check conversations!
@@ -88,13 +91,22 @@ def parse_CDP(packet_hex, length, control, org_code, pid, src_mac, dst_mac):
     """
     parse a CDP packet
     """
-    # There is too many bytes in the frame. TODO: look at the first 64 bytes, 22 parsed so far
-    # We can check for communications though.
+    # There is too many bytes in the frame. TODO: look at the first 64 bytes, 22 parsed so far so stop after 42 bytes
+    version = int(packet_hex[0], base=16)
+    ttl = int(packet_hex[1], base=16)
+    checksum = packet_hex[2] + packet_hex[3]
+    # device = (type, length, device id)
+    device = (packet_hex[4] + packet_hex[5], int(packet_hex[6] + packet_hex[7], base=16), packet_hex[8:14])
+    sw_version = packet_hex[14] + packet_hex[15]
+    sw_version_length = int(packet_hex[16] + packet_hex[17], base=16)
+    data_left = packet_hex[18:]
+    details = [src_mac, dst_mac, length, control, org_code, pid,                            # 802.3 data
+               version, ttl, checksum, device, sw_version, sw_version_length, data_left]    # CDP data
 
     # Check conversations!
     check_communications((src_mac, dst_mac, 'CDP'))
 
-    return [], 'CDP'
+    return details, 'CDP'
 
 
 def parse_802_3(packet_hex, length, src_mac, dst_mac):
@@ -135,7 +147,7 @@ def parse_packet(packet_hex_string):
         if packet_type == IPv4:
             return parse_IPv4()
         else:
-            return parse_ARP(packet_hex[14:], src, dst)
+            return parse_ARP(packet_hex[14:], packet_type, src, dst)
     else:
         return parse_802_3(packet_hex[14:], length, src, dst)
 
