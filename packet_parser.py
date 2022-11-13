@@ -11,10 +11,9 @@ import sys
 
 IPv4 = '0800'
 RECENT_PROTOCOLS = {}
-CONVERSATIONS = {}
-MAC_CONVERSATIONS = 0
-IP_CONVERSATIONS = 0
-PORT_CONVERSATIONS = 0
+MAC_CONVERSATIONS = {}
+IP_CONVERSATIONS = {}
+PORT_CONVERSATIONS = {}
 
 
 def parse_ICMP(packet_hex, layer_2_details, layer_3_details):
@@ -227,7 +226,6 @@ def parse_packet(packet_hex_string):
     :param: packet_hex: array containing the hex digits from the wireshark text file. Each element is 2 digits of hex
     :return:
     """
-    print(packet_hex_string)
     packet_hex = packet_hex_string.split('|')[2:]
     size = len(packet_hex)
 
@@ -282,28 +280,24 @@ def check_mac_communications(src_dst_protocol):
     global MAC_CONVERSATIONS
     # checks the CONVERSATIONS dictionary for a communication then updates
     flipped = (src_dst_protocol[1], src_dst_protocol[0], src_dst_protocol[2])
-    if src_dst_protocol in CONVERSATIONS and CONVERSATIONS[src_dst_protocol] == 0:
-        MAC_CONVERSATIONS += 1
-        CONVERSATIONS[src_dst_protocol] = 1
-    elif flipped in CONVERSATIONS and CONVERSATIONS[flipped] == 0:
-        MAC_CONVERSATIONS += 1
-        CONVERSATIONS[flipped] = 1
-    elif src_dst_protocol not in CONVERSATIONS and flipped not in CONVERSATIONS:
-        CONVERSATIONS[src_dst_protocol] = 0
+    if src_dst_protocol in MAC_CONVERSATIONS and MAC_CONVERSATIONS[src_dst_protocol] == 0:
+        MAC_CONVERSATIONS[src_dst_protocol] = 1
+    elif flipped in MAC_CONVERSATIONS and MAC_CONVERSATIONS[flipped] == 0:
+        MAC_CONVERSATIONS[flipped] = 1
+    elif src_dst_protocol not in MAC_CONVERSATIONS and flipped not in MAC_CONVERSATIONS:
+        MAC_CONVERSATIONS[src_dst_protocol] = 0
 
 
 def check_ip_communications(src_dst_protocol):
     global IP_CONVERSATIONS
     # checks the CONVERSATIONS dictionary for a communication then updates
     flipped = (src_dst_protocol[1], src_dst_protocol[0], src_dst_protocol[2])
-    if src_dst_protocol in CONVERSATIONS and CONVERSATIONS[src_dst_protocol] == 0:
-        IP_CONVERSATIONS += 1
-        CONVERSATIONS[src_dst_protocol] = 1
-    elif flipped in CONVERSATIONS and CONVERSATIONS[flipped] == 0:
-        IP_CONVERSATIONS += 1
-        CONVERSATIONS[flipped] = 1
-    elif src_dst_protocol not in CONVERSATIONS and flipped not in CONVERSATIONS:
-        CONVERSATIONS[src_dst_protocol] = 0
+    if src_dst_protocol in IP_CONVERSATIONS and IP_CONVERSATIONS[src_dst_protocol] == 0:
+        IP_CONVERSATIONS[src_dst_protocol] = 1
+    elif flipped in IP_CONVERSATIONS and IP_CONVERSATIONS[flipped] == 0:
+        IP_CONVERSATIONS[flipped] = 1
+    elif src_dst_protocol not in IP_CONVERSATIONS and flipped not in IP_CONVERSATIONS:
+        IP_CONVERSATIONS[src_dst_protocol] = 0
 
 
 def check_port_communications(src_dst_protocol):
@@ -311,14 +305,12 @@ def check_port_communications(src_dst_protocol):
     # checks the CONVERSATIONS dictionary for a communication then updates
     # src_dst_protocol is (src ip, src port, dst ip, dst port, protocol)
     flipped = (src_dst_protocol[2], src_dst_protocol[3], src_dst_protocol[0], src_dst_protocol[1], src_dst_protocol[4])
-    if src_dst_protocol in CONVERSATIONS and CONVERSATIONS[src_dst_protocol] == 0:
-        PORT_CONVERSATIONS += 1
-        CONVERSATIONS[src_dst_protocol] = 1
-    elif flipped in CONVERSATIONS and CONVERSATIONS[flipped] == 0:
-        PORT_CONVERSATIONS += 1
-        CONVERSATIONS[flipped] = 1
-    elif src_dst_protocol not in CONVERSATIONS and flipped not in CONVERSATIONS:
-        CONVERSATIONS[src_dst_protocol] = 0
+    if src_dst_protocol in PORT_CONVERSATIONS and PORT_CONVERSATIONS[src_dst_protocol] == 0:
+        PORT_CONVERSATIONS[src_dst_protocol] = 1
+    elif flipped in PORT_CONVERSATIONS and PORT_CONVERSATIONS[flipped] == 0:
+        PORT_CONVERSATIONS[flipped] = 1
+    elif src_dst_protocol not in PORT_CONVERSATIONS and flipped not in PORT_CONVERSATIONS:
+        PORT_CONVERSATIONS[src_dst_protocol] = 0
 
 
 def parse(file_name):
@@ -348,10 +340,10 @@ def parse(file_name):
             # If it has been seen, we need to calc delta time
             # previous protocol has timestamp in the second to last index
             previous = RECENT_PROTOCOLS.pop(protocol)
-            RECENT_PROTOCOLS[protocol] = current + [time_stamp_micro, time_stamp_micro - previous[-2]]
+            RECENT_PROTOCOLS[protocol] = current + [time_stamp_micro, time_stamp_micro - previous[-3], previous[-1] + 1]
         else:
             # delta time is -1 as placeholder since we haven't seen this protocol before
-            RECENT_PROTOCOLS[protocol] = current + [time_stamp_micro, -1]
+            RECENT_PROTOCOLS[protocol] = current + [time_stamp_micro, -1, 1]
 
         total_packets += 1
         # step over empty line onto +---------+---------------+----------+ line
@@ -359,7 +351,40 @@ def parse(file_name):
         line = file.readline()
 
     # return total packets, max packet size, min packet size, average packet size
-    return total_packets, max_packet_size, min_packet_size, sum_packet_size/total_packets
+    return total_packets, max_packet_size, min_packet_size, sum_packet_size / total_packets
+
+
+def print_conversations(conversations):
+    # prints dictionary conversation
+    for conversation in conversations.keys():
+        responded = conversations[conversation]
+        if responded == 0:
+            print('\t' + conversation[0] + '\t and ' + conversation[1] + '\t through ' +
+                  conversation[2] + ', ' + conversation[1] + ' didn\'t respond')
+        else:
+            print('\t' + conversation[0] + '\t and ' + conversation[1] + '\t through ' + conversation[2])
+
+
+def print_port_conversations(conversations):
+    # prints dictionary conversation for ports
+    for conversation in conversations.keys():
+        responded = conversations[conversation]
+        src_port = int(conversation[0], base=16)
+        dst_port = int(conversation[2], base=16)
+        if responded == 0:
+            print('\t' + conversation[1] + ':' + str(src_port) + '\t and \t' + conversation[3] + ':' + str(dst_port) +
+                  '\t through ' + conversation[4] + ', ' + conversation[3] + ':' + str(dst_port) + ' didn\'t respond')
+        else:
+            print('\t' + conversation[1] + ':' + str(src_port) + '\t and \t' + conversation[3] + ':' + str(dst_port) +
+                  '\t through ' + conversation[4])
+
+
+def print_distribution(conversations, total):
+    # iterate through conversations and print the protocol distribution
+    print('Protocol Distribution: \n\tprotocol\t%')
+    for protocol in conversations.keys():
+        current = conversations[protocol]
+        print('\t' + protocol + ' \t\t' + str(round((current[-1] / total)*100, 2)))
 
 
 def main(file_name):
@@ -367,13 +392,17 @@ def main(file_name):
     total_packets, max_size, min_size, avg_size = parse(file_name)
     for protocol in RECENT_PROTOCOLS.keys():
         print(protocol + ' ' + str(RECENT_PROTOCOLS[protocol]))
-    print('MAC conversations: ' + str(MAC_CONVERSATIONS))
-    print('IP conversations: ' + str(IP_CONVERSATIONS))
-    print('PORT conversations: ' + str(PORT_CONVERSATIONS))
+    print('MAC conversations:')
+    print_conversations(MAC_CONVERSATIONS)
+    print('IP conversations:')
+    print_conversations(IP_CONVERSATIONS)
+    print('PORT conversations:')
+    print_port_conversations(PORT_CONVERSATIONS)
     print('Total packets: ' + str(total_packets))
     print('Max packet size: ' + str(max_size))
     print('Min packet size: ' + str(min_size))
     print('Avg packet size: ' + str(round(avg_size, 2)))
+    print_distribution(RECENT_PROTOCOLS, total_packets)
     return
 
 
