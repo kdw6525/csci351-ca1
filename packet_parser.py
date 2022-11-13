@@ -241,15 +241,12 @@ def parse_packet(packet_hex_string):
     if length > 1500:
         layer_2_details = [packet_type, src, dst]
         if packet_type == IPv4:
-            packet = parse_IPv4(packet_hex[14:], layer_2_details)
-            return size, packet[0], packet[1]
+            return size, parse_IPv4(packet_hex[14:], layer_2_details)
         else:
-            packet = parse_ARP(packet_hex[14:], layer_2_details)
-            return size, packet[0], packet[1]
+            return size, parse_ARP(packet_hex[14:], layer_2_details)
     else:
         layer_2_details = [length, src, dst]
-        packet = parse_802_3(packet_hex[14:], layer_2_details)
-        return size, packet[0], packet[1]
+        return size, parse_802_3(packet_hex[14:], layer_2_details)
 
 
 def parse_timestamp(timestamp):
@@ -329,7 +326,6 @@ def parse(file_name):
     max_packet_size = 0
     min_packet_size = sys.maxsize
     sum_packet_size = 0
-    size = 0
     file = open(file_name, 'r')
     line = file.readline()
     while line == '+---------+---------------+----------+\n':
@@ -339,7 +335,8 @@ def parse(file_name):
 
         # step onto packet line
         line = file.readline()
-        size, current, protocol = parse_packet(line.strip())
+        size, packet = parse_packet(line.strip())
+        current, protocol = packet[0], packet[1]
 
         # packet size statistics, size - 1 due to length of array
         max_packet_size = max(max_packet_size, size - 1)
