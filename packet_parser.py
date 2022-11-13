@@ -53,11 +53,9 @@ def parse_TCP(packet_hex, layer_2_details, layer_3_details):
     urgent = packet_hex[18] + packet_hex[19]
     options = packet_hex[20:20 + (dec_header_len - 20)] if dec_header_len > 20 else []
     data = packet_hex[20 + (dec_header_len - 20):] if dec_header_len > 20 else packet_hex[20:]
-    print(dec_header_len - 20)
 
     tcp_details = [raw_seq, raw_ack, header_len, flags, window, checksum,
                    urgent, options, data, src_port, dst_port]
-    print(tcp_details)
     # check communications!
     check_port_communications((src_port, layer_3_details[-2], dst_port, layer_3_details[-1], 'TCP'))
     check_ip_communications((layer_3_details[-2], layer_3_details[-1], 'TCP'))
@@ -75,7 +73,15 @@ def parse_UDP(packet_hex, layer_2_details, layer_3_details):
     length = packet_hex[4] + packet_hex[5]
     checksum = packet_hex[6] + packet_hex[7]
     data = packet_hex[8:]
-    return [layer_2_details, layer_3_details], 'UDP'
+
+    udp_details = [length, checksum, data, src_port, dst_port]
+
+    # check communications!
+    check_port_communications((src_port, layer_3_details[-2], dst_port, layer_3_details[-1], 'UDP'))
+    check_ip_communications((layer_3_details[-2], layer_3_details[-1], 'UDP'))
+    check_mac_communications((layer_2_details[-2], layer_2_details[-1], 'UDP'))
+
+    return [layer_2_details, layer_3_details, udp_details], 'UDP'
 
 
 def parse_IPv4(packet_hex, layer_2_details):
@@ -102,7 +108,7 @@ def parse_IPv4(packet_hex, layer_2_details):
     elif protocol == '06':
         # parse TCP
         return parse_TCP(packet_hex[20:], layer_2_details, layer_3_details)
-    elif protocol == '17':
+    elif protocol == '11':
         # parse UDP
         return parse_UDP(packet_hex[20:], layer_2_details, layer_3_details)
 
@@ -223,6 +229,7 @@ def parse_packet(packet_hex_string):
     """
     print(packet_hex_string)
     packet_hex = packet_hex_string.split('|')[2:]
+    size = len(packet_hex)
 
     # parse out dst and source MAC
     dst, src = parse_mac(packet_hex[0:6]), parse_mac(packet_hex[6:12])
@@ -234,12 +241,15 @@ def parse_packet(packet_hex_string):
     if length > 1500:
         layer_2_details = [packet_type, src, dst]
         if packet_type == IPv4:
-            return parse_IPv4(packet_hex[14:], layer_2_details)
+            packet = parse_IPv4(packet_hex[14:], layer_2_details)
+            return size, packet[0], packet[1]
         else:
-            return parse_ARP(packet_hex[14:], layer_2_details)
+            packet = parse_ARP(packet_hex[14:], layer_2_details)
+            return size, packet[0], packet[1]
     else:
         layer_2_details = [length, src, dst]
-        return parse_802_3(packet_hex[14:], layer_2_details)
+        packet = parse_802_3(packet_hex[14:], layer_2_details)
+        return size, packet[0], packet[1]
 
 
 def parse_timestamp(timestamp):
@@ -315,6 +325,11 @@ def check_port_communications(src_dst_protocol):
 
 
 def parse(file_name):
+    total_packets = 0
+    max_packet_size = 0
+    min_packet_size = sys.maxsize
+    sum_packet_size = 0
+    size = 0
     file = open(file_name, 'r')
     line = file.readline()
     while line == '+---------+---------------+----------+\n':
@@ -324,7 +339,12 @@ def parse(file_name):
 
         # step onto packet line
         line = file.readline()
-        current, protocol = parse_packet(line.strip())
+        size, current, protocol = parse_packet(line.strip())
+
+        # packet size statistics, size - 1 due to length of array
+        max_packet_size = max(max_packet_size, size - 1)
+        min_packet_size = min(min_packet_size, size - 1)
+        sum_packet_size += size - 1
 
         # Check if the current protocol has already been seen
         if protocol in RECENT_PROTOCOLS:
@@ -336,24 +356,29 @@ def parse(file_name):
             # delta time is -1 as placeholder since we haven't seen this protocol before
             RECENT_PROTOCOLS[protocol] = current + [time_stamp_micro, -1]
 
+        total_packets += 1
         # step over empty line onto +---------+---------------+----------+ line
         file.readline()
         line = file.readline()
 
-    return
+    # return total packets, max packet size, min packet size, average packet size
+    return total_packets, max_packet_size, min_packet_size, sum_packet_size/total_packets
 
 
 def main(file_name):
-    # open wireshark dataset
-    parse(file_name)
+    # parse wireshark dataset
+    total_packets, max_size, min_size, avg_size = parse(file_name)
     for protocol in RECENT_PROTOCOLS.keys():
         print(protocol + ' ' + str(RECENT_PROTOCOLS[protocol]))
-    print(MAC_CONVERSATIONS)
-    print(IP_CONVERSATIONS)
-    print(PORT_CONVERSATIONS)
+    print('MAC conversations: ' + str(MAC_CONVERSATIONS))
+    print('IP conversations: ' + str(IP_CONVERSATIONS))
+    print('PORT conversations: ' + str(PORT_CONVERSATIONS))
+    print('Total packets: ' + str(total_packets))
+    print('Max packet size: ' + str(max_size))
+    print('Min packet size: ' + str(min_size))
+    print('Avg packet size: ' + str(round(avg_size, 2)))
     return
 
 
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     main(sys.argv[1])
