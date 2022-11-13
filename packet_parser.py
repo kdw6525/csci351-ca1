@@ -32,6 +32,7 @@ def parse_ICMP(packet_hex, layer_2_details, layer_3_details):
 
     # insert some ip communications check
     check_ip_communications((layer_3_details[-2], layer_3_details[-1], 'ICMP'))
+    check_mac_communications((layer_2_details[-2], layer_2_details[-1], 'ICMP'))
 
     return [layer_2_details, layer_3_details, icmp_details], 'ICMP'
 
@@ -40,13 +41,40 @@ def parse_TCP(packet_hex, layer_2_details, layer_3_details):
     """
     parse a TCP packet, 34 bytes parsed so far. 30 left
     """
-    return [layer_2_details, layer_3_details], 'TCP'
+    src_port = packet_hex[0] + packet_hex[1]
+    dst_port = packet_hex[2] + packet_hex[3]
+    raw_seq = packet_hex[4] + packet_hex[5] + packet_hex[6] + packet_hex[7]
+    raw_ack = packet_hex[8] + packet_hex[9] + packet_hex[10] + packet_hex[11]
+    header_len = packet_hex[12][0]
+    dec_header_len = int(header_len, base=16) * 4
+    flags = packet_hex[12][1] + packet_hex[13]
+    window = packet_hex[14] + packet_hex[15]
+    checksum = packet_hex[16] + packet_hex[17]
+    urgent = packet_hex[18] + packet_hex[19]
+    options = packet_hex[20:20 + (dec_header_len - 20)] if dec_header_len > 20 else []
+    data = packet_hex[20 + (dec_header_len - 20):] if dec_header_len > 20 else packet_hex[20:]
+    print(dec_header_len - 20)
+
+    tcp_details = [raw_seq, raw_ack, header_len, flags, window, checksum,
+                   urgent, options, data, src_port, dst_port]
+    print(tcp_details)
+    # check communications!
+    check_port_communications((src_port, layer_3_details[-2], dst_port, layer_3_details[-1], 'TCP'))
+    check_ip_communications((layer_3_details[-2], layer_3_details[-1], 'TCP'))
+    check_mac_communications((layer_2_details[-2], layer_2_details[-1], 'TCP'))
+
+    return [layer_2_details, layer_3_details, tcp_details], 'TCP'
 
 
 def parse_UDP(packet_hex, layer_2_details, layer_3_details):
     """
     parse a UDP packet, 34 bytes parsed so far. 30 left
     """
+    src_port = packet_hex[0] + packet_hex[1]
+    dst_port = packet_hex[2] + packet_hex[3]
+    length = packet_hex[4] + packet_hex[5]
+    checksum = packet_hex[6] + packet_hex[7]
+    data = packet_hex[8:]
     return [layer_2_details, layer_3_details], 'UDP'
 
 
@@ -96,7 +124,7 @@ def parse_ARP(packet_hex, layer_2_details):
     dst_ip = parse_ip(packet_hex[24:28])
 
     layer_3_details = [hardware_type, protocol_type, hardware_size,  # arp data
-                       protocol_size, opcode, src_mac, src_ip, dst_mac, dst_ip]
+                       protocol_size, opcode, src_ip, dst_ip]
 
     # Check conversations!
     check_mac_communications((src_mac, dst_mac, 'ARP'))
@@ -266,6 +294,21 @@ def check_ip_communications(src_dst_protocol):
         CONVERSATIONS[src_dst_protocol] = 1
     elif flipped in CONVERSATIONS and CONVERSATIONS[flipped] == 0:
         IP_CONVERSATIONS += 1
+        CONVERSATIONS[flipped] = 1
+    elif src_dst_protocol not in CONVERSATIONS and flipped not in CONVERSATIONS:
+        CONVERSATIONS[src_dst_protocol] = 0
+
+
+def check_port_communications(src_dst_protocol):
+    global PORT_CONVERSATIONS
+    # checks the CONVERSATIONS dictionary for a communication then updates
+    # src_dst_protocol is (src ip, src port, dst ip, dst port, protocol)
+    flipped = (src_dst_protocol[2], src_dst_protocol[3], src_dst_protocol[0], src_dst_protocol[1], src_dst_protocol[4])
+    if src_dst_protocol in CONVERSATIONS and CONVERSATIONS[src_dst_protocol] == 0:
+        PORT_CONVERSATIONS += 1
+        CONVERSATIONS[src_dst_protocol] = 1
+    elif flipped in CONVERSATIONS and CONVERSATIONS[flipped] == 0:
+        PORT_CONVERSATIONS += 1
         CONVERSATIONS[flipped] = 1
     elif src_dst_protocol not in CONVERSATIONS and flipped not in CONVERSATIONS:
         CONVERSATIONS[src_dst_protocol] = 0
