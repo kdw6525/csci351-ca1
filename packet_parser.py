@@ -482,7 +482,7 @@ def print_STP(stp_details):
           f"{'Destination Service Access Point represents the logical address of the destination'}")
     print(f"{'SSAP':20}{'0x' + ieee_8022[1]:20}{int(ieee_8022[1], base=16):<12}"
           f"{'Destination Service Access Point represents the logical address of the source'}")
-    print(f"{'Control field':20}{'0x' + ieee_8022[2]:20}{int(ieee_8022[1], base=16):<12}"
+    print(f"{'Control field':20}{'0x' + ieee_8022[2]:20}{int(ieee_8022[2], base=16):<12}"
           f"{'A U-format control field, signifies a connectionless application'}")
     print()
 
